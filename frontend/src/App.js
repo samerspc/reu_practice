@@ -62,6 +62,7 @@ function App() {
           <select id="model-select" value={selectedModel} onChange={handleModelChange}>
             <option value="mobilenet_final">MobileNet Final</option>
             <option value="food101_discriminator">Food-101 Discriminator</option>
+            <option value="food101_small">Food-101 Small Model</option>
           </select>
         </div>
         <input type="file" onChange={handleFileChange} />
