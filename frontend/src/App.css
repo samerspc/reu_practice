@@ -107,3 +107,28 @@ button:disabled {
   margin-top: 20px;
   font-weight: bold;
 }
+
+.model-selection {
+  margin-bottom: 20px;
+}
+
+.model-selection label {
+  margin-right: 10px;
+  font-size: 1.1rem;
+}
+
+.model-selection select {
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 1px solid #61dafb;
+  background-color: #3a3f47;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.model-selection select:focus {
+  outline: none;
+  border-color: #21a1f1;
+  box-shadow: 0 0 0 3px rgba(97, 218, 251, 0.3);
+}
