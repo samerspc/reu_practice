@@ -1,4 +1,6 @@
 flask
 tensorflow
 pillow
-flask-cors 
+flask-cors
+torch
+torchvision 

@@ -5,6 +5,9 @@ from tensorflow.keras.preprocessing import image
 import numpy as np
 from PIL import Image
 from flask_cors import CORS
+import torch
+import torchvision.transforms as transforms
+from torchvision.models import resnet18
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for all routes
@@ -28,13 +31,14 @@ MODELS = {
             "garlic bread", "gnocchi", "greek salad", "grilled cheese sandwich",
             "grilled salmon", "guacamole", "gyoza", "hamburger", "hot dog", "huevos rancheros",
             "hummus", "ice cream", "lasagna", "lobster bisque", "lobster roll sandwich",
-            "macaroni and cheese", "macarons", "miso soup", "mussels", "nachos", "omelette",
+            "macaroni and cheese", "macarons", "miso_soup", "mussels", "nachos", "omelette",
             "onion rings", "oysters", "pad thai", "paella", "pancakes", "panna cotta",
             "peking duck", "pho", "pizza", "pork chop", "poutine", "prime rib", "pulled pork sandwich",
             "ramen", "ravioli", "red velvet cake", "risotto", "samosa", "sashimi", "scallops",
             "shrimp scampi", "smoked salmon", "sushi", "tacos", "takoyaki", "tiramisu",
             "tuna tartare", "waffles"
         ],
+        "model_type": "keras",
         "model": None # Will be loaded at app startup
     },
     "food101_discriminator": {
@@ -61,14 +65,33 @@ MODELS = {
             "shrimp_scampi", "smoked_salmon", "sushi", "tacos", "takoyaki", "tiramisu",
             "tuna_tartare", "waffles"
         ],
+        "model_type": "keras",
+        "model": None # Will be loaded at app startup
+    },
+    "food101_small": {
+        "path": 'savers_model/food101_small_model.pt',
+        "img_size": 128,
+        "labels": ["apple_pie", "baby_back_ribs", "baklava", "beef_carpaccio", "beef_tartare"],
+        "model_type": "pytorch",
         "model": None # Will be loaded at app startup
     }
 }
 
+def load_pytorch_model(model_path, num_classes):
+    model = resnet18(pretrained=False)
+    model.fc = torch.nn.Linear(model.fc.in_features, num_classes)
+    # Use map_location to handle loading on different devices (CPU/GPU)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    model.eval() # Set to evaluation mode
+    return model
+
 # Load models at startup
 for model_name, props in MODELS.items():
     try:
-        props["model"] = load_model(props["path"])
+        if props["model_type"] == "keras":
+            props["model"] = load_model(props["path"])
+        elif props["model_type"] == "pytorch":
+            props["model"] = load_pytorch_model(props["path"], len(props["labels"]))
         print(f"Successfully loaded model: {model_name} from {props['path']}")
     except Exception as e:
         print(f"Error loading model {model_name} from {props['path']}: {e}")
@@ -90,6 +113,7 @@ def predict():
     model = selected_model_props["model"]
     img_size = selected_model_props["img_size"]
     class_labels = selected_model_props["labels"]
+    model_type = selected_model_props["model_type"]
 
     if 'file' not in request.files:
         return jsonify({'error': 'No file part in the request'}), 400
@@ -100,25 +124,37 @@ def predict():
         try:
             img = Image.open(file.stream).convert('RGB')
             img = img.resize((img_size, img_size))
-            img_array = image.img_to_array(img)
-            img_array = np.expand_dims(img_array, axis=0) # Create a batch
 
-            # Apply specific preprocessing based on the model
-            if model_name == "mobilenet_final":
-                img_array /= 255.0 # Rescale to [0, 1]
-            elif model_name == "food101_discriminator":
-                img_array = (img_array / 127.5) - 1.0 # Normalize to [-1, 1]
+            if model_type == "keras":
+                img_array = image.img_to_array(img)
+                img_array = np.expand_dims(img_array, axis=0) # Create a batch
+                if model_name == "mobilenet_final":
+                    img_array /= 255.0 # Rescale to [0, 1]
+                elif model_name == "food101_discriminator":
+                    img_array = (img_array / 127.5) - 1.0 # Normalize to [-1, 1]
+                predictions = model.predict(img_array)
 
-            predictions = model.predict(img_array)
+                if model_name == "food101_discriminator":
+                    predicted_class_index = np.argmax(predictions[1][0]) # Take labels prediction
+                    confidence = float(predictions[1][0][predicted_class_index])
+                else:
+                    predicted_class_index = np.argmax(predictions[0])
+                    confidence = float(np.max(predictions[0]))
 
-            # For the discriminator, predictions is a list: [validity, labels]
-            if model_name == "food101_discriminator":
-                predicted_class_index = np.argmax(predictions[1][0]) # Take labels prediction
-                # Use the validity prediction for confidence, or just the label confidence
-                confidence = float(predictions[1][0][predicted_class_index])
-            else:
-                predicted_class_index = np.argmax(predictions[0])
-                confidence = float(np.max(predictions[0]))
+            elif model_type == "pytorch":
+                # PyTorch preprocessing: ToTensor scales to [0, 1]
+                preprocess_transform = transforms.Compose([
+                    transforms.ToTensor()
+                ])
+                img_tensor = preprocess_transform(img).unsqueeze(0) # Add batch dimension
+
+                with torch.no_grad():
+                    outputs = model(img_tensor)
+                    # Apply softmax for probabilities if the model output is raw logits
+                    probabilities = torch.nn.functional.softmax(outputs, dim=1)
+                    confidence, predicted_class_index_tensor = torch.max(probabilities, 1)
+                    predicted_class_index = predicted_class_index_tensor.item()
+                    confidence = confidence.item()
 
             predicted_food = class_labels[predicted_class_index]
 
