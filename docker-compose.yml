@@ -8,6 +8,7 @@ services:
     volumes:
       - ./backend:/app
       - ./model_mobilenet_final.h5:/app/model_mobilenet_final.h5
+      - ./GAN_model:/app/GAN_model
 
   frontend:
     build: ./frontend
