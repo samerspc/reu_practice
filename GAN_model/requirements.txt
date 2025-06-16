@@ -1,0 +1,6 @@
+tensorflow==2.15.0
+tensorflow-datasets==4.9.4
+matplotlib==3.7.1
+numpy==1.26.4
+tqdm==4.66.1
+Pillow==10.2.0
